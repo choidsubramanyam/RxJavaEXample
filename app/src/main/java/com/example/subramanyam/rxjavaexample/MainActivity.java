@@ -10,6 +10,8 @@ import io.reactivex.ObservableOnSubscribe;
 import io.reactivex.Observer;
 import io.reactivex.android.schedulers.AndroidSchedulers;
 import io.reactivex.disposables.Disposable;
+import io.reactivex.functions.Consumer;
+import io.reactivex.internal.operators.observable.ObservableCreate;
 import io.reactivex.schedulers.Schedulers;
 import retrofit2.Retrofit;
 import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory;
@@ -97,22 +99,28 @@ public class MainActivity extends AppCompatActivity {
 
     private void getSingleData() {
         retrofit.create(StoreCouponsApi.class).getCoupons("topcoupons")
-                .subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread()).subscribe(this::handle,this::handleError);
+                .subscribeOn(Schedulers.io()).flatMap(sc-> Observable.fromIterable(sc.getCoupons())).filter(c->c.getStore().equals("amazon")).observeOn(AndroidSchedulers.mainThread()).subscribe((Consumer<? super Coupon>) couponObserver,this::handleError);
+    }
+
+    private void handle(Coupon coupon) {
+        Log.e("filter",coupon.toString());
     }
 
     private void handle(StoreCoupons storeCoupons) {
-        Log.e("single",storeCoupons.getCoupons().get(2).toString());
+        Log.e("single",storeCoupons.toString());
     }
 
     private void getStoreCouponData() {
-        Observable.just(retrofit.create(StoreCouponsApi.class)).subscribeOn(Schedulers.computation())
+       /* Observable.just(retrofit.create(StoreCouponsApi.class)).subscribeOn(Schedulers.computation())
                 .flatMap(s -> {
                     Observable<StoreCoupons> couponsObservable=s.getCoupons("topcoupons").subscribeOn(Schedulers.io());
                     Observable<StoreOffers> storeOffersObservable=s.getStoreInfo().subscribeOn(Schedulers.io());
                     return Observable.concatArray(couponsObservable,storeOffersObservable);
-                }).observeOn(AndroidSchedulers.mainThread()).subscribe(this::handleResults,this::handleError);
-
-
+                }).observeOn(AndroidSchedulers.mainThread()).subscribe(this::handleResults,this::handleError);*/
+        Observable.just(retrofit.create(StoreCouponsApi.class)).subscribeOn(Schedulers.computation())
+                .flatMap(s-> s.getStoreInfo().subscribeOn(Schedulers.io())
+                        .map(res-> res.getStore())
+                        .flatMap(store->s.getCoupons(store))).observeOn(AndroidSchedulers.mainThread()).subscribe(this::handleResults);
 
     }
 
@@ -123,11 +131,40 @@ public class MainActivity extends AppCompatActivity {
     private void handleResults(Object o) {
         if (o instanceof StoreCoupons){
             StoreCoupons storeCoupons= (StoreCoupons) o;
-            Log.e("object",""+((StoreCoupons) o).getCoupons().get(1).getCoupon());
+            Observable<Coupon> offersObservable=Observable.create(new ObservableOnSubscribe<Coupon>() {
+                @Override
+                public void subscribe(ObservableEmitter<Coupon> e) throws Exception {
+                    e.onNext(((StoreCoupons) o).getCoupons().get(0));
+                }
+            });
+            offersObservable.subscribe(couponObserver);
+            Log.e("coupons",""+((StoreCoupons) o).getCoupons().toString());
         }else if (o instanceof StoreOffers){
-            Log.e("da",""+((StoreOffers) o).getStore());
+
+            Log.e("store",""+((StoreOffers) o).getStore().toString());
         }
         Log.e("object",""+o);
     }
+    Observer<Coupon> couponObserver=new Observer<Coupon>() {
+        @Override
+        public void onSubscribe(Disposable d) {
+
+        }
+
+        @Override
+        public void onNext(Coupon coupon) {
+
+        }
+
+        @Override
+        public void onError(Throwable e) {
+
+        }
+
+        @Override
+        public void onComplete() {
+
+        }
+    };
 
 }
